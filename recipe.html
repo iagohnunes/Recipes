@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerador de Receitas</title>
+    <style>
+        body, html {
+            height: 100%;
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f4f4f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .wrapper {
+            text-align: center;
+            background: white;
+            padding: 40px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+        }
+
+        input[type="url"] {
+            width: 80%;
+            padding: 10px;
+            border: 2px solid #ccc;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #0056b3;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #004494;
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <input type="url" id="urlInput" placeholder="Insira a URL da receita aqui...">
+        <button onclick="gerarReceita()">Gerar Receita</button>
+    </div>
+
+    <script>
+        async function getDadosPag(url) {
+            const options = {method: 'GET', headers: {'User-Agent': 'insomnia/9.0.0'}};
+
+            return await fetch(url, options)
+              .then(response => response.text())
+              .then(html => {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, "text/html");
+                return doc;
+              })
+              .catch(err => {
+                console.error('Erro ao fazer scraping da página:', err);
+              });
+        }
+
+        async function getInfo(url) {
+            const pagina = await getDadosPag(url)
+
+            header = pagina.querySelector('div#recipe_header > div.headerRecipeImage');
+
+            imgs = header.getElementsByTagName('img')[0].srcset.split(',').filter(elemento => elemento != "").map(elemento => ({link: elemento.trim().split(' ')[0], size: Number(elemento.trim().split(' ')[1].replace('w',''))}));
+
+            imgs.sort((a, b) => b.size - a.size);
+
+            img = imgs[0];
+
+            title = header.getElementsByTagName('h1')[0].textContent;
+
+            igredientes = Array.from(pagina.querySelectorAll('div.blockIngredientListingsctn > ul > li')).map(element => element.innerText);
+
+            preparo = Array.from(pagina.querySelectorAll('ol.olStd > li')).map(element => element.innerText);
+
+            obs = Array.from(pagina.querySelectorAll('div.ctnTPstd')).map(elemento => {
+                return {
+                    ...(elemento.querySelector('h5') ? {title: elemento.querySelector('h5').innerText} : {}),
+                    text: elemento.querySelector('p').innerText
+                }
+            });
+
+            return {
+                img,
+                title,
+                igredientes,
+                preparo,
+                obs
+            }
+        }
+
+        async function abrirNovaAbaComHtml(url) {
+            // Abrir uma nova aba no navegador
+            // var novaAba = window.open('', '_blank');
+
+            var info = await getInfo(url);
+
+            // HTML que você quer exibir na nova aba
+            var html = `
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>${info.title}</title>
+                    <style>
+                        body {
+                            font-family: 'Arial', sans-serif;
+                            margin: 0;
+                            padding: 0;
+                            background-color: #f7f7f7;
+                            color: #333;
+                        }
+                        .container {
+                            background-color: #fff;
+                            max-width: 800px;
+                            margin: 20px auto;
+                            padding: 20px;
+                            border-radius: 8px;
+                            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+                        }
+                        img {
+                            width: 300px;
+                            height: auto;
+                            border-radius: 8px;
+                        }
+                        h1, h2 {
+                            color: #5a5a5a;
+                        }
+                        ul {
+                            list-style-type: none;
+                            padding: 0;
+                        }
+                        ul.ingredients li {
+                            padding: 8px 0;
+                            border-bottom: 1px solid #eee;
+                        }
+                        ol.steps {
+                            counter-reset: step-counter;
+                        }
+                        ol.steps li {
+                            list-style-type: none;
+                            counter-increment: step-counter;
+                            margin-bottom: 10px;
+                            padding-left: 20px;
+                            position: relative;
+                        }
+                        ol.steps li:before {
+                            content: counter(step-counter) ".";
+                            position: absolute;
+                            left: 0;
+                            font-weight: bold;
+                            color: #d2691e;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1>${info.title}</h1>
+                        <img src="${info.img.link}">
+                        <h2>Ingredientes</h2>
+                        <ul class="ingredients">
+                            ${info.igredientes.map(elemento => '<li>'+elemento+'</li>').join('\n')}
+                        </ul>
+                        <h2>Instruções</h2>
+                        <ol class="steps">
+                            ${info.preparo.map(elemento => '<li>'+elemento+'</li>').join('\n')}
+                        </ol>
+                        ${info.obs ? '<br><br><br><hr>' : ''}
+                        ${info.obs.map(elemento => {
+                                return `
+                                    <div>
+                                        ${elemento.title ? '<h3>'+elemento.title+'</h3>': ''}
+                                        ${'<p>'+elemento.text+'</p>'}
+                                    </div>
+                                `
+                            }).join('\n')
+                        }
+                    </div>
+                </body>
+                </html>
+            `;
+
+            // Escrever o HTML na nova aba
+            // novaAba.document.open();
+            // novaAba.document.write(html);
+            // novaAba.document.close();
+        }
+
+
+        function gerarReceita() {
+            const url = document.getElementById('urlInput').value;
+            if(url){
+                abrirNovaAbaComHtml(url)
+            } else {
+                alert('Insira uma URL');
+            }
+            // Aqui você pode adicionar mais lógica para fazer algo com a URL
+        }
+    </script>
+</body>
+</html>
